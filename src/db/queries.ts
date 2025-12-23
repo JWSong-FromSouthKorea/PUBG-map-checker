@@ -46,13 +46,22 @@ export async function getCurrentRotation(
   const db = await getDatabase();
   const now = new Date().toISOString().split('T')[0];
 
-  const rotation = db.data.rotations.find(
-    (r) =>
+  // First try to find rotation matching current date
+  let rotation = db.data.rotations.find(
+    (r: WeeklyRotation) =>
       r.region === region &&
       r.mode === mode &&
       r.startDate <= now &&
       r.endDate >= now
   );
+
+  // If no match, get the most recent rotation for this region/mode
+  if (!rotation) {
+    const candidates = db.data.rotations
+      .filter((r: WeeklyRotation) => r.region === region && r.mode === mode)
+      .sort((a: WeeklyRotation, b: WeeklyRotation) => b.startDate.localeCompare(a.startDate));
+    rotation = candidates[0];
+  }
 
   return rotation || null;
 }

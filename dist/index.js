@@ -144,9 +144,13 @@ async function saveRotations(rotations) {
 async function getCurrentRotation(region, mode) {
   const db2 = await getDatabase();
   const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const rotation = db2.data.rotations.find(
+  let rotation = db2.data.rotations.find(
     (r) => r.region === region && r.mode === mode && r.startDate <= now && r.endDate >= now
   );
+  if (!rotation) {
+    const candidates = db2.data.rotations.filter((r) => r.region === region && r.mode === mode).sort((a, b) => b.startDate.localeCompare(a.startDate));
+    rotation = candidates[0];
+  }
   return rotation || null;
 }
 async function getUpcomingRotations(region, mode, limit = 4) {
