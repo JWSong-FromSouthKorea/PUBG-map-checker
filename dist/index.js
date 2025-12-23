@@ -400,8 +400,18 @@ function isMapServiceReport(html) {
 }
 function extractPatchVersion(html) {
   const $ = cheerio.load(html);
-  const title = $("h1").text();
-  const match = title.match(/(\d+\.\d+)/);
+  const h1Text = $("h1").text();
+  const titleText = $("title").text();
+  logger.info("Extracting patch version...", { h1: h1Text.slice(0, 200), title: titleText.slice(0, 200), htmlLength: html.length });
+  let match = h1Text.match(/(\d+\.\d+)/);
+  if (match) {
+    return match[1];
+  }
+  match = titleText.match(/(\d+\.\d+)/);
+  if (match) {
+    return match[1];
+  }
+  match = html.slice(0, 5e3).match(/Update\s+(\d+\.\d+)/i);
   return match ? match[1] : null;
 }
 function parseRotationTable(html, patchVersion) {

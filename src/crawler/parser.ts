@@ -17,10 +17,25 @@ export function isMapServiceReport(html: string): boolean {
 
 export function extractPatchVersion(html: string): string | null {
   const $ = cheerio.load(html);
-  const title = $('h1').text();
+  const h1Text = $('h1').text();
+  const titleText = $('title').text();
 
-  // Match patterns like "Update 38.2" or "38.1"
-  const match = title.match(/(\d+\.\d+)/);
+  logger.info('Extracting patch version...', { h1: h1Text.slice(0, 200), title: titleText.slice(0, 200), htmlLength: html.length });
+
+  // Try h1 first
+  let match = h1Text.match(/(\d+\.\d+)/);
+  if (match) {
+    return match[1];
+  }
+
+  // Fallback to title tag
+  match = titleText.match(/(\d+\.\d+)/);
+  if (match) {
+    return match[1];
+  }
+
+  // Fallback to anywhere in first 5000 chars (for SPA pre-rendered content)
+  match = html.slice(0, 5000).match(/Update\s+(\d+\.\d+)/i);
   return match ? match[1] : null;
 }
 
