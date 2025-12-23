@@ -655,3 +655,4 @@ main().catch((error) => {
   logger.error("Fatal error during startup", error);
   process.exit(1);
 });
+process.stdin.resume();
