@@ -49,10 +49,15 @@ var client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 var commands = new Collection();
-async function startBot() {
+function startBot() {
   logger.info("Starting Discord bot...");
-  await client.login(botConfig.discordToken);
-  logger.info("Bot logged in successfully");
+  return new Promise((resolve) => {
+    client.once("ready", () => {
+      logger.info("Bot logged in successfully");
+      resolve();
+    });
+    client.login(botConfig.discordToken);
+  });
 }
 function stopBot() {
   client.destroy();

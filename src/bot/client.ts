@@ -14,12 +14,16 @@ export const client = new Client({
 
 export const commands = new Collection<string, Command>();
 
-export async function startBot(): Promise<void> {
+export function startBot(): Promise<void> {
   logger.info('Starting Discord bot...');
 
-  await client.login(botConfig.discordToken);
-
-  logger.info('Bot logged in successfully');
+  return new Promise((resolve) => {
+    client.once('ready', () => {
+      logger.info('Bot logged in successfully');
+      resolve();
+    });
+    client.login(botConfig.discordToken);
+  });
 }
 
 export function stopBot(): void {
