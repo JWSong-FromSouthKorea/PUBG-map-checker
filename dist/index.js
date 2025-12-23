@@ -283,12 +283,14 @@ async function fetchMapServiceReports() {
     });
     const newsLinks = [];
     for (const item of items) {
-      const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
+      const linkMatch = item.link.match(/pubg\.com(?:\/(en|ko))?\/news\/(\d+)/);
       if (!linkMatch) continue;
       const versionMatch = item.title.match(/(\d+\.\d+)/);
       const version = versionMatch ? parseFloat(versionMatch[1]) : 0;
+      const postId = linkMatch[2];
+      const normalizedUrl = `https://pubg.com/en/news/${postId}`;
       newsLinks.push({
-        url: item.link,
+        url: normalizedUrl,
         version,
         title: item.title
       });

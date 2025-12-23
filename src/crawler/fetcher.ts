@@ -52,14 +52,19 @@ export async function fetchMapServiceReports(): Promise<string[]> {
     const newsLinks: { url: string; version: number; title: string }[] = [];
 
     for (const item of items) {
-      const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
+      // Match both pubg.com/news/123 and pubg.com/en/news/123
+      const linkMatch = item.link.match(/pubg\.com(?:\/(en|ko))?\/news\/(\d+)/);
       if (!linkMatch) continue;
 
       const versionMatch = item.title.match(/(\d+\.\d+)/);
       const version = versionMatch ? parseFloat(versionMatch[1]) : 0;
 
+      // Normalize URL to /en/news/ format
+      const postId = linkMatch[2];
+      const normalizedUrl = `https://pubg.com/en/news/${postId}`;
+
       newsLinks.push({
-        url: item.link,
+        url: normalizedUrl,
         version,
         title: item.title,
       });
