@@ -25,11 +25,11 @@ export async function fetchPage(url: string): Promise<string> {
   return response.data;
 }
 
-async function searchWithGoogle(): Promise<string[]> {
+export async function fetchMapServiceReports(): Promise<string[]> {
   const { googleApiKey, googleSearchEngineId } = botConfig;
 
   if (!googleApiKey || !googleSearchEngineId) {
-    logger.warn('Google API credentials not configured, skipping search');
+    logger.warn('Google API credentials not configured');
     return [];
   }
 
@@ -42,15 +42,19 @@ async function searchWithGoogle(): Promise<string[]> {
     const response = await axios.get<GoogleSearchResult>(url, { timeout: 10000 });
     const items = response.data.items || [];
 
+    // Debug: log all raw items
+    logger.info('Google API raw results:', {
+      totalItems: items.length,
+      items: items.map(i => ({ title: i.title, link: i.link }))
+    });
+
     // Extract pubg.com news links and patch versions from title
     const newsLinks: { url: string; version: number; title: string }[] = [];
 
     for (const item of items) {
-      // Filter only pubg.com news links (en or ko)
       const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
       if (!linkMatch) continue;
 
-      // Extract version from title (e.g., "Update 39.1" -> 39.1)
       const versionMatch = item.title.match(/(\d+\.\d+)/);
       const version = versionMatch ? parseFloat(versionMatch[1]) : 0;
 
@@ -61,8 +65,18 @@ async function searchWithGoogle(): Promise<string[]> {
       });
     }
 
+    // Debug: log parsed versions before sorting
+    logger.info('Parsed versions (before sort):', {
+      versions: newsLinks.map(n => ({ version: n.version, title: n.title, url: n.url }))
+    });
+
     // Sort by version descending (highest = newest)
     newsLinks.sort((a, b) => b.version - a.version);
+
+    // Debug: log after sorting
+    logger.info('Parsed versions (after sort):', {
+      versions: newsLinks.map(n => ({ version: n.version, title: n.title }))
+    });
 
     const top = newsLinks[0];
     if (top) {
@@ -71,37 +85,9 @@ async function searchWithGoogle(): Promise<string[]> {
       logger.warn('No pubg.com news links found in search results');
     }
 
-    const sortedUrls = newsLinks.map(item => item.url);
-
-    return sortedUrls.slice(0, 5);
+    return newsLinks.map(item => item.url).slice(0, 5);
   } catch (error) {
     logger.error('Google search failed', error);
     return [];
   }
-}
-
-export async function fetchMapServiceReports(): Promise<string[]> {
-  logger.info('Fetching news page to find Map Service Reports...');
-
-  // Try Google Search API first
-  const googleResults = await searchWithGoogle();
-  if (googleResults.length > 0) {
-    return googleResults;
-  }
-
-  // Fallback to direct page scraping (may not work due to SPA)
-  logger.info('Falling back to direct page scraping...');
-  const newsUrl = 'https://pubg.com/en/news';
-  const html = await fetchPage(newsUrl);
-
-  const linkPattern = /href="(\/en\/news\/\d+)"/g;
-  const links: string[] = [];
-  let match;
-
-  while ((match = linkPattern.exec(html)) !== null) {
-    links.push(`https://pubg.com${match[1]}`);
-  }
-
-  logger.info('Found news links', { count: links.length });
-  return links;
 }

@@ -1,12 +1,11 @@
 import { REST, Routes } from 'discord.js';
 import { commands } from '../client.js';
 import { rotationCommand } from './rotation.js';
-import { scheduleCommand } from './schedule.js';
 import { updateCommand } from './update.js';
 import { botConfig } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 
-const commandList = [rotationCommand, scheduleCommand, updateCommand];
+const commandList = [rotationCommand, updateCommand];
 
 export function loadCommands(): void {
   for (const command of commandList) {

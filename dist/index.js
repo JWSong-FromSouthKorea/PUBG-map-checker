@@ -153,13 +153,6 @@ async function getCurrentRotation(region, mode) {
   }
   return rotation || null;
 }
-async function getUpcomingRotations(region, mode, limit = 4) {
-  const db2 = await getDatabase();
-  const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  return db2.data.rotations.filter(
-    (r) => r.region === region && r.mode === mode && r.endDate >= now
-  ).sort((a, b) => a.startDate.localeCompare(b.startDate)).slice(0, limit);
-}
 async function saveCrawlLog(log2) {
   const db2 = await getDatabase();
   const maxId = db2.data.crawlLogs.reduce((max, l) => Math.max(max, l.id || 0), 0);
@@ -250,67 +243,9 @@ var rotationCommand = {
   }
 };
 
-// src/bot/commands/schedule.ts
-import {
-  SlashCommandBuilder as SlashCommandBuilder2,
-  EmbedBuilder as EmbedBuilder2
-} from "discord.js";
-var REGION_CHOICES2 = [
-  { name: "Asia", value: "AS" },
-  { name: "Southeast Asia", value: "SEA" },
-  { name: "Europe", value: "EU" },
-  { name: "North America", value: "NA" },
-  { name: "South America", value: "SA" },
-  { name: "Russia", value: "RU" },
-  { name: "Kakao (Korea)", value: "KAKAO" },
-  { name: "Console", value: "CONSOLE" }
-];
-var MODE_CHOICES2 = [
-  { name: "Normal", value: "normal" },
-  { name: "Ranked", value: "ranked" }
-];
-var scheduleCommand = {
-  data: new SlashCommandBuilder2().setName("schedule").setDescription("Get upcoming PUBG map rotation schedule").addStringOption(
-    (option) => option.setName("region").setDescription("Select region").setRequired(false).addChoices(...REGION_CHOICES2)
-  ).addStringOption(
-    (option) => option.setName("mode").setDescription("Select game mode").setRequired(false).addChoices(...MODE_CHOICES2)
-  ).addIntegerOption(
-    (option) => option.setName("weeks").setDescription("Number of weeks to show (1-4)").setRequired(false).setMinValue(1).setMaxValue(4)
-  ),
-  async execute(interaction) {
-    const region = interaction.options.getString("region") || "AS";
-    const mode = interaction.options.getString("mode") || "normal";
-    const weeks = interaction.options.getInteger("weeks") || 4;
-    const rotations = await getUpcomingRotations(region, mode, weeks);
-    if (rotations.length === 0) {
-      await interaction.reply({
-        content: `No schedule data found for ${region} (${mode}). Try running \`/update\` to fetch latest data.`,
-        ephemeral: true
-      });
-      return;
-    }
-    const embed = new EmbedBuilder2().setTitle(`\u{1F4C5} PUBG Map Schedule - ${region}`).setDescription(`**Mode:** ${mode.toUpperCase()} | Showing next ${rotations.length} week(s)`).setColor(46296).setTimestamp();
-    for (const rotation of rotations) {
-      const mapList = rotation.maps.map((m) => {
-        const emoji = m.role === "fixed" ? "\u{1F4CC}" : m.role === "favored" ? "\u2B50" : "\u{1F504}";
-        return `${emoji} ${m.name}`;
-      }).join("\n");
-      embed.addFields({
-        name: `Week ${rotation.week} (${rotation.startDate} ~ ${rotation.endDate})`,
-        value: mapList || "No data",
-        inline: true
-      });
-    }
-    embed.setFooter({
-      text: `Patch ${rotations[0].patchVersion} | \u{1F4CC} Fixed | \u2B50 Favored | \u{1F504} Etc`
-    });
-    await interaction.reply({ embeds: [embed] });
-  }
-};
-
 // src/bot/commands/update.ts
 import {
-  SlashCommandBuilder as SlashCommandBuilder3,
+  SlashCommandBuilder as SlashCommandBuilder2,
   PermissionFlagsBits
 } from "discord.js";
 
@@ -330,10 +265,10 @@ async function fetchPage(url) {
   logger.info("Page fetched successfully", { status: response.status });
   return response.data;
 }
-async function searchWithGoogle() {
+async function fetchMapServiceReports() {
   const { googleApiKey, googleSearchEngineId } = botConfig;
   if (!googleApiKey || !googleSearchEngineId) {
-    logger.warn("Google API credentials not configured, skipping search");
+    logger.warn("Google API credentials not configured");
     return [];
   }
   const query = "pubg map service report";
@@ -342,6 +277,10 @@ async function searchWithGoogle() {
   try {
     const response = await axios.get(url, { timeout: 1e4 });
     const items = response.data.items || [];
+    logger.info("Google API raw results:", {
+      totalItems: items.length,
+      items: items.map((i) => ({ title: i.title, link: i.link }))
+    });
     const newsLinks = [];
     for (const item of items) {
       const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
@@ -354,37 +293,24 @@ async function searchWithGoogle() {
         title: item.title
       });
     }
+    logger.info("Parsed versions (before sort):", {
+      versions: newsLinks.map((n) => ({ version: n.version, title: n.title, url: n.url }))
+    });
     newsLinks.sort((a, b) => b.version - a.version);
+    logger.info("Parsed versions (after sort):", {
+      versions: newsLinks.map((n) => ({ version: n.version, title: n.title }))
+    });
     const top = newsLinks[0];
     if (top) {
       logger.info("Google search completed", { topVersion: top.version, topUrl: top.url });
     } else {
       logger.warn("No pubg.com news links found in search results");
     }
-    const sortedUrls = newsLinks.map((item) => item.url);
-    return sortedUrls.slice(0, 5);
+    return newsLinks.map((item) => item.url).slice(0, 5);
   } catch (error) {
     logger.error("Google search failed", error);
     return [];
   }
-}
-async function fetchMapServiceReports() {
-  logger.info("Fetching news page to find Map Service Reports...");
-  const googleResults = await searchWithGoogle();
-  if (googleResults.length > 0) {
-    return googleResults;
-  }
-  logger.info("Falling back to direct page scraping...");
-  const newsUrl = "https://pubg.com/en/news";
-  const html = await fetchPage(newsUrl);
-  const linkPattern = /href="(\/en\/news\/\d+)"/g;
-  const links = [];
-  let match;
-  while ((match = linkPattern.exec(html)) !== null) {
-    links.push(`https://pubg.com${match[1]}`);
-  }
-  logger.info("Found news links", { count: links.length });
-  return links;
 }
 
 // src/crawler/parser.ts
@@ -723,7 +649,7 @@ async function updateRotationsFromCrawl() {
 
 // src/bot/commands/update.ts
 var updateCommand = {
-  data: new SlashCommandBuilder3().setName("update").setDescription("Manually update map rotation data (Admin only)").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  data: new SlashCommandBuilder2().setName("update").setDescription("Manually update map rotation data (Admin only)").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });
     try {
@@ -750,7 +676,7 @@ ${log2?.message || ""}`
 };
 
 // src/bot/commands/index.ts
-var commandList = [rotationCommand, scheduleCommand, updateCommand];
+var commandList = [rotationCommand, updateCommand];
 function loadCommands() {
   for (const command of commandList) {
     commands.set(command.data.name, command);

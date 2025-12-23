@@ -66,39 +66,6 @@ export async function getCurrentRotation(
   return rotation || null;
 }
 
-// Get upcoming rotations for a region
-export async function getUpcomingRotations(
-  region: Region,
-  mode: GameMode,
-  limit = 4
-): Promise<WeeklyRotation[]> {
-  const db = await getDatabase();
-  const now = new Date().toISOString().split('T')[0];
-
-  return db.data.rotations
-    .filter(
-      (r) =>
-        r.region === region &&
-        r.mode === mode &&
-        r.endDate >= now
-    )
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))
-    .slice(0, limit);
-}
-
-// Get all rotations for current patch
-export async function getRotationsByPatch(patchVersion: string): Promise<WeeklyRotation[]> {
-  const db = await getDatabase();
-
-  return db.data.rotations
-    .filter((r) => r.patchVersion === patchVersion)
-    .sort((a, b) => {
-      if (a.region !== b.region) return a.region.localeCompare(b.region);
-      if (a.mode !== b.mode) return a.mode.localeCompare(b.mode);
-      return a.week - b.week;
-    });
-}
-
 // Save crawl log
 export async function saveCrawlLog(log: CrawlLog): Promise<void> {
   const db = await getDatabase();
