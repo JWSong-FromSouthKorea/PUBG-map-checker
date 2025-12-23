@@ -397,88 +397,253 @@ var VALID_MAPS = [
   "Livik",
   "Rondo"
 ];
-var REGIONS = ["AS", "SEA", "EU", "NA", "SA", "RU", "KAKAO", "CONSOLE"];
+var RANDOM_MAP_REGIONS = ["NA", "SA", "EU", "RU", "CONSOLE"];
 function isMapServiceReport(html) {
   const $ = cheerio.load(html);
-  const title = $("h1").text().toLowerCase();
-  return title.includes("map service") || title.includes("map rotation");
+  const title = $("title").text().toLowerCase();
+  const h3Text = $("h3").text().toLowerCase();
+  return title.includes("map service") || h3Text.includes("map service") || title.includes("map rotation") || h3Text.includes("map rotation");
 }
 function extractPatchVersion(html) {
   const $ = cheerio.load(html);
-  const h1Text = $("h1").text();
   const titleText = $("title").text();
-  logger.info("Extracting patch version...", { h1: h1Text.slice(0, 200), title: titleText.slice(0, 200), htmlLength: html.length });
-  let match = h1Text.match(/(\d+\.\d+)/);
+  logger.info("Extracting patch version...", { title: titleText.slice(0, 200), htmlLength: html.length });
+  let match = titleText.match(/Update\s+(\d+\.\d+)/i);
   if (match) {
     return match[1];
   }
-  match = titleText.match(/(\d+\.\d+)/);
+  const h3Text = $("h3.detail-header__title").text();
+  match = h3Text.match(/(\d+\.\d+)/);
   if (match) {
     return match[1];
   }
-  match = html.slice(0, 5e3).match(/Update\s+(\d+\.\d+)/i);
+  match = html.slice(0, 1e4).match(/Update\s+(\d+\.\d+)/i);
   return match ? match[1] : null;
+}
+function parseScheduleTable($) {
+  const schedules = [];
+  const tables = $("table");
+  tables.each((_, table) => {
+    const $table = $(table);
+    const headerTexts = $table.find("thead th").map((_2, el) => $(el).text().trim().toLowerCase()).get();
+    if (!headerTexts.some((h) => h.includes("pc")) || !headerTexts.some((h) => h.includes("console"))) {
+      return;
+    }
+    $table.find("tbody tr").each((_2, row) => {
+      const $row = $(row);
+      const weekCell = $row.find("th, td").first().text().trim();
+      const weekMatch = weekCell.match(/Week\s+(\d+)/i);
+      if (!weekMatch) return;
+      const week = parseInt(weekMatch[1], 10);
+      const cells = $row.find("td").map((_3, el) => $(el).text().trim()).get();
+      if (cells.length >= 2) {
+        schedules.push({
+          week,
+          pcDate: parseDateString(cells[0]),
+          consoleDate: parseDateString(cells[1])
+        });
+      }
+    });
+  });
+  logger.info("Parsed schedule", { count: schedules.length, schedules });
+  return schedules;
+}
+function parseDateString(dateStr) {
+  const months = {
+    january: "01",
+    february: "02",
+    march: "03",
+    april: "04",
+    may: "05",
+    june: "06",
+    july: "07",
+    august: "08",
+    september: "09",
+    october: "10",
+    november: "11",
+    december: "12"
+  };
+  const match = dateStr.match(/(\w+)\s+(\d+)(?:,?\s*(\d{4}))?/i);
+  if (!match) return "";
+  const month = months[match[1].toLowerCase()];
+  const day = match[2].padStart(2, "0");
+  const year = match[3] || (/* @__PURE__ */ new Date()).getFullYear().toString();
+  return `${year}-${month}-${day}`;
+}
+function findRegionFromContext($, $table) {
+  const wrapperPrev = $table.closest(".fr-table-wrap").prev().text().trim().toUpperCase();
+  if (wrapperPrev === "AS" || wrapperPrev === "ASIA") return "AS";
+  if (wrapperPrev === "SEA" || wrapperPrev === "SOUTHEAST ASIA") return "SEA";
+  if (wrapperPrev.includes("KAKAO") || wrapperPrev === "KOREA") return "KAKAO";
+  if (wrapperPrev === "NA" || wrapperPrev === "NORTH AMERICA") return "NA";
+  if (wrapperPrev === "SA" || wrapperPrev === "SOUTH AMERICA") return "SA";
+  if (wrapperPrev === "EU" || wrapperPrev === "EUROPE") return "EU";
+  if (wrapperPrev === "RU" || wrapperPrev === "RUSSIA" || wrapperPrev === "CIS") return "RU";
+  if (wrapperPrev.includes("CONSOLE")) return "CONSOLE";
+  if (wrapperPrev.includes("SCHEDULE")) return null;
+  let $prev = $table.prev();
+  let attempts = 0;
+  while ($prev.length && attempts < 5) {
+    const text = $prev.text().trim().toUpperCase();
+    if (text === "AS" || text === "ASIA") return "AS";
+    if (text === "SEA" || text === "SOUTHEAST ASIA") return "SEA";
+    if (text.includes("KAKAO") || text === "KOREA") return "KAKAO";
+    if (text === "NA" || text === "NORTH AMERICA") return "NA";
+    if (text === "SA" || text === "SOUTH AMERICA") return "SA";
+    if (text === "EU" || text === "EUROPE") return "EU";
+    if (text === "RU" || text === "RUSSIA" || text === "CIS") return "RU";
+    if (text.includes("CONSOLE")) return "CONSOLE";
+    $prev = $prev.prev();
+    attempts++;
+  }
+  return null;
+}
+function extractMapFromCell(cellText) {
+  const normalizedText = cellText.toLowerCase().trim();
+  for (const mapName of VALID_MAPS) {
+    if (normalizedText.includes(mapName.toLowerCase())) {
+      return mapName;
+    }
+  }
+  return null;
+}
+function parseMapSelectTable($, $table, region, schedules, patchVersion, mode) {
+  const rotations = [];
+  const $headerRow = $table.find("thead tr").first();
+  const headers = $headerRow.find("th").map((_, el) => {
+    const text = $(el).text().trim().toLowerCase();
+    const colspan = parseInt($(el).attr("colspan") || "1", 10);
+    return { text, colspan };
+  }).get();
+  const columnRoles = [];
+  for (const header of headers) {
+    const role = header.text.includes("fixed") ? "fixed" : header.text.includes("favor") ? "favored" : (
+      // covers both 'favored' and 'favoured'
+      header.text.includes("etc") ? "etc" : "etc"
+    );
+    for (let i = 0; i < header.colspan; i++) {
+      columnRoles.push(role);
+    }
+  }
+  $table.find("tbody tr").each((_, row) => {
+    const $row = $(row);
+    const cells = $row.find("th, td").map((_2, el) => $(el).text().trim()).get();
+    if (cells.length < 2) return;
+    const weekMatch = cells[0].match(/Week\s*(\d+)/i);
+    if (!weekMatch) return;
+    const week = parseInt(weekMatch[1], 10);
+    const maps = [];
+    for (let i = 1; i < cells.length; i++) {
+      const mapName = extractMapFromCell(cells[i]);
+      if (mapName) {
+        const role = columnRoles[i] || "etc";
+        maps.push({ name: mapName, role });
+      }
+    }
+    if (maps.length > 0) {
+      const schedule = schedules.find((s) => s.week === week);
+      const isConsole = region === "CONSOLE";
+      const startDate = schedule ? isConsole ? schedule.consoleDate : schedule.pcDate : "";
+      const nextSchedule = schedules.find((s) => s.week === week + 1);
+      let endDate = "";
+      if (nextSchedule) {
+        const nextStart = new Date(isConsole ? nextSchedule.consoleDate : nextSchedule.pcDate);
+        nextStart.setDate(nextStart.getDate() - 1);
+        endDate = nextStart.toISOString().split("T")[0];
+      } else if (startDate) {
+        const end = new Date(startDate);
+        end.setDate(end.getDate() + 6);
+        endDate = end.toISOString().split("T")[0];
+      }
+      rotations.push({
+        region,
+        mode,
+        week,
+        patchVersion,
+        maps,
+        startDate,
+        endDate
+      });
+    }
+  });
+  return rotations;
+}
+function parseFixedMapPool($, $table, region, schedules, patchVersion, mode) {
+  const rotations = [];
+  const maps = [];
+  $table.find("tbody tr, thead tr").find("td, th").each((_, cell) => {
+    const mapName = extractMapFromCell($(cell).text());
+    if (mapName) {
+      maps.push({ name: mapName, role: "fixed" });
+    }
+  });
+  for (const schedule of schedules) {
+    const isConsole = region === "CONSOLE";
+    const startDate = isConsole ? schedule.consoleDate : schedule.pcDate;
+    const nextSchedule = schedules.find((s) => s.week === schedule.week + 1);
+    let endDate = "";
+    if (nextSchedule) {
+      const nextStart = new Date(isConsole ? nextSchedule.consoleDate : nextSchedule.pcDate);
+      nextStart.setDate(nextStart.getDate() - 1);
+      endDate = nextStart.toISOString().split("T")[0];
+    } else if (startDate) {
+      const end = new Date(startDate);
+      end.setDate(end.getDate() + 6);
+      endDate = end.toISOString().split("T")[0];
+    }
+    if (maps.length > 0 && startDate) {
+      rotations.push({
+        region,
+        mode,
+        week: schedule.week,
+        patchVersion,
+        maps: [...maps],
+        startDate,
+        endDate
+      });
+    }
+  }
+  return rotations;
 }
 function parseRotationTable(html, patchVersion) {
   const $ = cheerio.load(html);
   const rotations = [];
+  const schedules = parseScheduleTable($);
+  if (schedules.length === 0) {
+    logger.warn("No schedule found, using default dates");
+  }
   const allTables = $("table");
   logger.info("Parsing rotation tables...", { tableCount: allTables.length });
+  let currentMode = "normal";
   allTables.each((idx, table) => {
-    const headers = $(table).find("th").map((_, el) => $(el).text().trim()).get();
-    logger.info(`Table ${idx} headers`, { headers: headers.slice(0, 10) });
-  });
-  $("table").each((_, table) => {
     const $table = $(table);
-    const headers = $table.find("th").map((_2, el) => $(el).text().trim()).get();
-    if (!headers.some((h) => h.toLowerCase().includes("week") || h.toLowerCase().includes("map"))) {
+    const prevH2 = $table.prevAll("h2").first().text().toLowerCase();
+    if (prevH2.includes("ranked")) {
+      currentMode = "ranked";
+    }
+    const headerTexts = $table.find("thead th").map((_, el) => $(el).text().trim().toLowerCase()).get();
+    if (headerTexts.some((h) => h.includes("pc") && h.length < 5)) {
       return;
     }
-    let region = "AS";
-    const prevText = $table.prev().text().toLowerCase();
-    for (const r of REGIONS) {
-      if (prevText.includes(r.toLowerCase())) {
-        region = r;
-        break;
+    const region = findRegionFromContext($, $table);
+    if (!region) {
+      logger.debug(`Table ${idx}: Could not determine region, skipping`);
+      return;
+    }
+    logger.info(`Processing table ${idx} for region ${region}`);
+    const hasWeeklyRotation = headerTexts.some((h) => h.includes("fixed") || h.includes("favou"));
+    let tableRotations;
+    if (hasWeeklyRotation) {
+      tableRotations = parseMapSelectTable($, $table, region, schedules, patchVersion, currentMode);
+    } else {
+      const isFixedPool = $table.prevAll("h4, h3").first().text().toLowerCase().includes("fixed");
+      if (isFixedPool || RANDOM_MAP_REGIONS.includes(region)) {
+        tableRotations = parseFixedMapPool($, $table, region, schedules, patchVersion, currentMode);
+      } else {
+        tableRotations = parseMapSelectTable($, $table, region, schedules, patchVersion, currentMode);
       }
     }
-    $table.find("tbody tr").each((_2, row) => {
-      const cells = $(row).find("td").map((_3, el) => $(el).text().trim()).get();
-      if (cells.length < 2) return;
-      const weekMatch = cells[0].match(/week\s*(\d+)/i);
-      const week = weekMatch ? parseInt(weekMatch[1], 10) : 1;
-      const maps = [];
-      for (let i = 1; i < cells.length; i++) {
-        const cellText = cells[i];
-        for (const mapName of VALID_MAPS) {
-          if (cellText.toLowerCase().includes(mapName.toLowerCase())) {
-            let role = "etc";
-            if (headers[i]?.toLowerCase().includes("fixed")) {
-              role = "fixed";
-            } else if (headers[i]?.toLowerCase().includes("favored") || headers[i]?.toLowerCase().includes("favour")) {
-              role = "favored";
-            }
-            maps.push({ name: mapName, role });
-          }
-        }
-      }
-      if (maps.length > 0) {
-        const baseDate = /* @__PURE__ */ new Date();
-        const startDate = new Date(baseDate);
-        startDate.setDate(startDate.getDate() + (week - 1) * 7);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 6);
-        rotations.push({
-          region,
-          mode: "normal",
-          week,
-          patchVersion,
-          maps,
-          startDate: startDate.toISOString().split("T")[0],
-          endDate: endDate.toISOString().split("T")[0]
-        });
-      }
-    });
+    rotations.push(...tableRotations);
   });
   logger.info("Parsed rotations", { count: rotations.length });
   return rotations;
