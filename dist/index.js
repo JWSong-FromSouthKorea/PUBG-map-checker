@@ -332,7 +332,7 @@ async function searchWithGoogle() {
     logger.warn("Google API credentials not configured, skipping search");
     return [];
   }
-  const query = '"Map Service Report" site:pubg.com/en/news';
+  const query = "pubg map service report";
   const url = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(query)}`;
   logger.info("Searching for Map Service Reports via Google...", { query });
   try {
@@ -340,17 +340,24 @@ async function searchWithGoogle() {
     const items = response.data.items || [];
     const newsLinks = [];
     for (const item of items) {
-      const match = item.link.match(/pubg\.com\/en\/news\/(\d+)/);
-      if (match) {
-        newsLinks.push({
-          url: item.link,
-          id: parseInt(match[1], 10)
-        });
-      }
+      const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
+      if (!linkMatch) continue;
+      const versionMatch = item.title.match(/(\d+\.\d+)/);
+      const version = versionMatch ? parseFloat(versionMatch[1]) : 0;
+      newsLinks.push({
+        url: item.link,
+        version,
+        title: item.title
+      });
     }
-    newsLinks.sort((a, b) => b.id - a.id);
+    newsLinks.sort((a, b) => b.version - a.version);
+    const top = newsLinks[0];
+    if (top) {
+      logger.info("Google search completed", { topVersion: top.version, topUrl: top.url });
+    } else {
+      logger.warn("No pubg.com news links found in search results");
+    }
     const sortedUrls = newsLinks.map((item) => item.url);
-    logger.info("Google search completed", { count: sortedUrls.length });
     return sortedUrls.slice(0, 5);
   } catch (error) {
     logger.error("Google search failed", error);
@@ -415,7 +422,12 @@ function extractPatchVersion(html) {
 function parseRotationTable(html, patchVersion) {
   const $ = cheerio.load(html);
   const rotations = [];
-  logger.info("Parsing rotation tables...");
+  const allTables = $("table");
+  logger.info("Parsing rotation tables...", { tableCount: allTables.length });
+  allTables.each((idx, table) => {
+    const headers = $(table).find("th").map((_, el) => $(el).text().trim()).get();
+    logger.info(`Table ${idx} headers`, { headers: headers.slice(0, 10) });
+  });
   $("table").each((_, table) => {
     const $table = $(table);
     const headers = $table.find("th").map((_2, el) => $(el).text().trim()).get();

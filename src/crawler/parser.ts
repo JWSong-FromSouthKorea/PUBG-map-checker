@@ -46,7 +46,14 @@ export function parseRotationTable(
   const $ = cheerio.load(html);
   const rotations: WeeklyRotation[] = [];
 
-  logger.info('Parsing rotation tables...');
+  const allTables = $('table');
+  logger.info('Parsing rotation tables...', { tableCount: allTables.length });
+
+  // Log all table headers for debugging
+  allTables.each((idx, table) => {
+    const headers = $(table).find('th').map((_, el) => $(el).text().trim()).get();
+    logger.info(`Table ${idx} headers`, { headers: headers.slice(0, 10) });
+  });
 
   // Find tables with rotation data
   $('table').each((_, table) => {

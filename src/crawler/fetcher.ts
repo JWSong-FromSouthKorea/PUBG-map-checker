@@ -33,7 +33,7 @@ async function searchWithGoogle(): Promise<string[]> {
     return [];
   }
 
-  const query = '"Map Service Report" site:pubg.com/en/news';
+  const query = 'pubg map service report';
   const url = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(query)}`;
 
   logger.info('Searching for Map Service Reports via Google...', { query });
@@ -42,24 +42,36 @@ async function searchWithGoogle(): Promise<string[]> {
     const response = await axios.get<GoogleSearchResult>(url, { timeout: 10000 });
     const items = response.data.items || [];
 
-    // Extract pubg.com news links and their IDs
-    const newsLinks: { url: string; id: number }[] = [];
+    // Extract pubg.com news links and patch versions from title
+    const newsLinks: { url: string; version: number; title: string }[] = [];
 
     for (const item of items) {
-      const match = item.link.match(/pubg\.com\/en\/news\/(\d+)/);
-      if (match) {
-        newsLinks.push({
-          url: item.link,
-          id: parseInt(match[1], 10),
-        });
-      }
+      // Filter only pubg.com news links (en or ko)
+      const linkMatch = item.link.match(/pubg\.com\/(en|ko)\/news\/(\d+)/);
+      if (!linkMatch) continue;
+
+      // Extract version from title (e.g., "Update 39.1" -> 39.1)
+      const versionMatch = item.title.match(/(\d+\.\d+)/);
+      const version = versionMatch ? parseFloat(versionMatch[1]) : 0;
+
+      newsLinks.push({
+        url: item.link,
+        version,
+        title: item.title,
+      });
     }
 
-    // Sort by ID descending (highest = newest)
-    newsLinks.sort((a, b) => b.id - a.id);
+    // Sort by version descending (highest = newest)
+    newsLinks.sort((a, b) => b.version - a.version);
+
+    const top = newsLinks[0];
+    if (top) {
+      logger.info('Google search completed', { topVersion: top.version, topUrl: top.url });
+    } else {
+      logger.warn('No pubg.com news links found in search results');
+    }
 
     const sortedUrls = newsLinks.map(item => item.url);
-    logger.info('Google search completed', { count: sortedUrls.length });
 
     return sortedUrls.slice(0, 5);
   } catch (error) {
