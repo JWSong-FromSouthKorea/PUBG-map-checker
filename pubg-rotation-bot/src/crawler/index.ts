@@ -24,7 +24,7 @@ export async function crawlMapServiceReport(url: string): Promise<ParsedRotation
 
     const rotations = parseRotationTable(html, patchVersion);
 
-    saveCrawlLog({
+    await saveCrawlLog({
       url,
       status: 'success',
       message: `Parsed ${rotations.length} rotations for patch ${patchVersion}`,
@@ -39,7 +39,7 @@ export async function crawlMapServiceReport(url: string): Promise<ParsedRotation
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to crawl Map Service Report', { url, error: message });
 
-    saveCrawlLog({
+    await saveCrawlLog({
       url,
       status: 'failed',
       message,
@@ -72,7 +72,7 @@ export async function findAndCrawlLatestReport(): Promise<ParsedRotationData | n
 
 export async function updateRotationsFromCrawl(): Promise<boolean> {
   // Initialize DB
-  getDatabase();
+  await getDatabase();
 
   const data = await findAndCrawlLatestReport();
 
@@ -81,7 +81,7 @@ export async function updateRotationsFromCrawl(): Promise<boolean> {
     return false;
   }
 
-  saveRotations(data.rotations);
+  await saveRotations(data.rotations);
   logger.info('Rotations saved successfully', {
     patch: data.patchVersion,
     count: data.rotations.length,

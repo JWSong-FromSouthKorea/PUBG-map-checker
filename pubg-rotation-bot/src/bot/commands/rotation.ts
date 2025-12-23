@@ -52,7 +52,7 @@ export const rotationCommand: Command = {
     const region = (interaction.options.getString('region') || 'AS') as Region;
     const mode = (interaction.options.getString('mode') || 'normal') as GameMode;
 
-    const rotation = getCurrentRotation(region, mode);
+    const rotation = await getCurrentRotation(region, mode);
 
     if (!rotation) {
       await interaction.reply({

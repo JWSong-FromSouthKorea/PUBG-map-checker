@@ -1,11 +1,11 @@
 import { Client, GatewayIntentBits, Collection } from 'discord.js';
-import type { SlashCommandBuilder } from 'discord.js';
+import type { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { botConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
 export interface Command {
   data: SlashCommandBuilder;
-  execute: (interaction: unknown) => Promise<void>;
+  execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
 }
 
 export const client = new Client({

@@ -1,156 +1,119 @@
 import { getDatabase } from './index.js';
-import type { WeeklyRotation, CrawlLog, Region, GameMode, MapEntry } from '../types/index.js';
+import type { WeeklyRotation, CrawlLog, Region, GameMode } from '../types/index.js';
 
 // Save rotation data
-export function saveRotation(rotation: WeeklyRotation): void {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO rotations
-    (region, mode, week, patch_version, maps, start_date, end_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+export async function saveRotation(rotation: WeeklyRotation): Promise<void> {
+  const db = await getDatabase();
 
-  stmt.run(
-    rotation.region,
-    rotation.mode,
-    rotation.week,
-    rotation.patchVersion,
-    JSON.stringify(rotation.maps),
-    rotation.startDate,
-    rotation.endDate
+  const existingIndex = db.data.rotations.findIndex(
+    (r) =>
+      r.region === rotation.region &&
+      r.mode === rotation.mode &&
+      r.week === rotation.week &&
+      r.patchVersion === rotation.patchVersion
   );
+
+  if (existingIndex >= 0) {
+    db.data.rotations[existingIndex] = {
+      ...rotation,
+      id: db.data.rotations[existingIndex].id,
+      createdAt: db.data.rotations[existingIndex].createdAt,
+    };
+  } else {
+    const maxId = db.data.rotations.reduce((max, r) => Math.max(max, r.id || 0), 0);
+    db.data.rotations.push({
+      ...rotation,
+      id: maxId + 1,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  await db.write();
 }
 
-// Save multiple rotations in a transaction
-export function saveRotations(rotations: WeeklyRotation[]): void {
-  const db = getDatabase();
-  const insertMany = db.transaction((items: WeeklyRotation[]) => {
-    for (const rotation of items) {
-      saveRotation(rotation);
-    }
-  });
-  insertMany(rotations);
+// Save multiple rotations
+export async function saveRotations(rotations: WeeklyRotation[]): Promise<void> {
+  for (const rotation of rotations) {
+    await saveRotation(rotation);
+  }
 }
 
 // Get current rotation for a region and mode
-export function getCurrentRotation(
+export async function getCurrentRotation(
   region: Region,
   mode: GameMode
-): WeeklyRotation | null {
-  const db = getDatabase();
-  const now = new Date().toISOString();
+): Promise<WeeklyRotation | null> {
+  const db = await getDatabase();
+  const now = new Date().toISOString().split('T')[0];
 
-  const stmt = db.prepare(`
-    SELECT * FROM rotations
-    WHERE region = ? AND mode = ?
-    AND start_date <= ? AND end_date >= ?
-    ORDER BY week DESC
-    LIMIT 1
-  `);
+  const rotation = db.data.rotations.find(
+    (r) =>
+      r.region === region &&
+      r.mode === mode &&
+      r.startDate <= now &&
+      r.endDate >= now
+  );
 
-  const row = stmt.get(region, mode, now, now) as Record<string, unknown> | undefined;
-
-  if (!row) return null;
-
-  return {
-    id: row.id as number,
-    region: row.region as Region,
-    mode: row.mode as GameMode,
-    week: row.week as number,
-    patchVersion: row.patch_version as string,
-    maps: JSON.parse(row.maps as string) as MapEntry[],
-    startDate: row.start_date as string,
-    endDate: row.end_date as string,
-    createdAt: row.created_at as string,
-  };
+  return rotation || null;
 }
 
 // Get upcoming rotations for a region
-export function getUpcomingRotations(
+export async function getUpcomingRotations(
   region: Region,
   mode: GameMode,
   limit = 4
-): WeeklyRotation[] {
-  const db = getDatabase();
-  const now = new Date().toISOString();
+): Promise<WeeklyRotation[]> {
+  const db = await getDatabase();
+  const now = new Date().toISOString().split('T')[0];
 
-  const stmt = db.prepare(`
-    SELECT * FROM rotations
-    WHERE region = ? AND mode = ?
-    AND end_date >= ?
-    ORDER BY start_date ASC
-    LIMIT ?
-  `);
-
-  const rows = stmt.all(region, mode, now, limit) as Record<string, unknown>[];
-
-  return rows.map((row) => ({
-    id: row.id as number,
-    region: row.region as Region,
-    mode: row.mode as GameMode,
-    week: row.week as number,
-    patchVersion: row.patch_version as string,
-    maps: JSON.parse(row.maps as string) as MapEntry[],
-    startDate: row.start_date as string,
-    endDate: row.end_date as string,
-    createdAt: row.created_at as string,
-  }));
+  return db.data.rotations
+    .filter(
+      (r) =>
+        r.region === region &&
+        r.mode === mode &&
+        r.endDate >= now
+    )
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .slice(0, limit);
 }
 
 // Get all rotations for current patch
-export function getRotationsByPatch(patchVersion: string): WeeklyRotation[] {
-  const db = getDatabase();
+export async function getRotationsByPatch(patchVersion: string): Promise<WeeklyRotation[]> {
+  const db = await getDatabase();
 
-  const stmt = db.prepare(`
-    SELECT * FROM rotations
-    WHERE patch_version = ?
-    ORDER BY region, mode, week
-  `);
-
-  const rows = stmt.all(patchVersion) as Record<string, unknown>[];
-
-  return rows.map((row) => ({
-    id: row.id as number,
-    region: row.region as Region,
-    mode: row.mode as GameMode,
-    week: row.week as number,
-    patchVersion: row.patch_version as string,
-    maps: JSON.parse(row.maps as string) as MapEntry[],
-    startDate: row.start_date as string,
-    endDate: row.end_date as string,
-    createdAt: row.created_at as string,
-  }));
+  return db.data.rotations
+    .filter((r) => r.patchVersion === patchVersion)
+    .sort((a, b) => {
+      if (a.region !== b.region) return a.region.localeCompare(b.region);
+      if (a.mode !== b.mode) return a.mode.localeCompare(b.mode);
+      return a.week - b.week;
+    });
 }
 
 // Save crawl log
-export function saveCrawlLog(log: CrawlLog): void {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT INTO crawl_logs (url, status, message)
-    VALUES (?, ?, ?)
-  `);
+export async function saveCrawlLog(log: CrawlLog): Promise<void> {
+  const db = await getDatabase();
 
-  stmt.run(log.url, log.status, log.message || null);
+  const maxId = db.data.crawlLogs.reduce((max, l) => Math.max(max, l.id || 0), 0);
+  db.data.crawlLogs.push({
+    ...log,
+    id: maxId + 1,
+    crawledAt: new Date().toISOString(),
+  });
+
+  // Keep only last 100 logs
+  if (db.data.crawlLogs.length > 100) {
+    db.data.crawlLogs = db.data.crawlLogs.slice(-100);
+  }
+
+  await db.write();
 }
 
 // Get latest crawl log
-export function getLatestCrawlLog(): CrawlLog | null {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT * FROM crawl_logs
-    ORDER BY crawled_at DESC
-    LIMIT 1
-  `);
+export async function getLatestCrawlLog(): Promise<CrawlLog | null> {
+  const db = await getDatabase();
 
-  const row = stmt.get() as Record<string, unknown> | undefined;
+  if (db.data.crawlLogs.length === 0) return null;
 
-  if (!row) return null;
-
-  return {
-    id: row.id as number,
-    url: row.url as string,
-    status: row.status as 'success' | 'failed',
-    message: row.message as string | undefined,
-    crawledAt: row.crawled_at as string,
-  };
+  return db.data.crawlLogs[db.data.crawlLogs.length - 1];
 }

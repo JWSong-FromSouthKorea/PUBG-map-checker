@@ -55,7 +55,7 @@ export const scheduleCommand: Command = {
     const mode = (interaction.options.getString('mode') || 'normal') as GameMode;
     const weeks = interaction.options.getInteger('weeks') || 4;
 
-    const rotations = getUpcomingRotations(region, mode, weeks);
+    const rotations = await getUpcomingRotations(region, mode, weeks);
 
     if (rotations.length === 0) {
       await interaction.reply({
