@@ -42,12 +42,6 @@ export async function fetchMapServiceReports(): Promise<string[]> {
     const response = await axios.get<GoogleSearchResult>(url, { timeout: 10000 });
     const items = response.data.items || [];
 
-    // Debug: log all raw items
-    logger.info('Google API raw results:', {
-      totalItems: items.length,
-      items: items.map(i => ({ title: i.title, link: i.link }))
-    });
-
     // Extract pubg.com news links and patch versions from title
     const newsLinks: { url: string; version: number; title: string }[] = [];
 
@@ -70,25 +64,8 @@ export async function fetchMapServiceReports(): Promise<string[]> {
       });
     }
 
-    // Debug: log parsed versions before sorting
-    logger.info('Parsed versions (before sort):', {
-      versions: newsLinks.map(n => ({ version: n.version, title: n.title, url: n.url }))
-    });
-
     // Sort by version descending (highest = newest)
     newsLinks.sort((a, b) => b.version - a.version);
-
-    // Debug: log after sorting
-    logger.info('Parsed versions (after sort):', {
-      versions: newsLinks.map(n => ({ version: n.version, title: n.title }))
-    });
-
-    const top = newsLinks[0];
-    if (top) {
-      logger.info('Google search completed', { topVersion: top.version, topUrl: top.url });
-    } else {
-      logger.warn('No pubg.com news links found in search results');
-    }
 
     return newsLinks.map(item => item.url).slice(0, 5);
   } catch (error) {

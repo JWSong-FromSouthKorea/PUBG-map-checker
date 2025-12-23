@@ -173,69 +173,72 @@ async function getLatestCrawlLog() {
 }
 
 // src/bot/commands/rotation.ts
-var REGION_CHOICES = [
-  { name: "Asia", value: "AS" },
-  { name: "Southeast Asia", value: "SEA" },
-  { name: "Europe", value: "EU" },
-  { name: "North America", value: "NA" },
-  { name: "South America", value: "SA" },
-  { name: "Russia", value: "RU" },
-  { name: "Kakao (Korea)", value: "KAKAO" },
-  { name: "Console", value: "CONSOLE" }
-];
 var MODE_CHOICES = [
-  { name: "Normal", value: "normal" },
-  { name: "Ranked", value: "ranked" }
+  { name: "\uC77C\uBC18", value: "normal" },
+  { name: "\uB7AD\uD06C", value: "ranked" }
 ];
+var MAP_NAMES_KO = {
+  "Erangel": "\uC5D0\uB780\uAC94",
+  "Miramar": "\uBBF8\uB77C\uB9C8",
+  "Sanhok": "\uC0AC\uB179",
+  "Vikendi": "\uBE44\uCF04\uB514",
+  "Taego": "\uD0DC\uC774\uACE0",
+  "Deston": "\uB370\uC2A4\uD134",
+  "Paramo": "\uD30C\uB77C\uBAA8",
+  "Haven": "\uD5E4\uC774\uBE10",
+  "Karakin": "\uCE74\uB77C\uD0A8",
+  "Rondo": "\uB860\uB3C4"
+};
 var ROLE_EMOJI = {
   fixed: "\u{1F4CC}",
   favored: "\u2B50",
   etc: "\u{1F504}"
 };
+function translateMapName(name) {
+  return MAP_NAMES_KO[name] || name;
+}
 var rotationCommand = {
-  data: new SlashCommandBuilder().setName("rotation").setDescription("Get current PUBG map rotation").addStringOption(
-    (option) => option.setName("region").setDescription("Select region").setRequired(false).addChoices(...REGION_CHOICES)
-  ).addStringOption(
-    (option) => option.setName("mode").setDescription("Select game mode").setRequired(false).addChoices(...MODE_CHOICES)
+  data: new SlashCommandBuilder().setName("rotation").setDescription("\uD604\uC7AC \uBC30\uADF8 \uB9F5 \uB85C\uD14C\uC774\uC158 \uD655\uC778").addStringOption(
+    (option) => option.setName("mode").setDescription("\uAC8C\uC784 \uBAA8\uB4DC \uC120\uD0DD").setRequired(false).addChoices(...MODE_CHOICES)
   ),
   async execute(interaction) {
-    const region = interaction.options.getString("region") || "AS";
     const mode = interaction.options.getString("mode") || "normal";
-    const rotation = await getCurrentRotation(region, mode);
+    const modeLabel = mode === "normal" ? "\uC77C\uBC18" : "\uB7AD\uD06C";
+    const rotation = await getCurrentRotation("AS", mode);
     if (!rotation) {
       await interaction.reply({
-        content: `No rotation data found for ${region} (${mode}). Try running \`/update\` to fetch latest data.`,
+        content: `${modeLabel} \uBAA8\uB4DC\uC758 \uB85C\uD14C\uC774\uC158 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \`/update\` \uBA85\uB839\uC5B4\uB85C \uCD5C\uC2E0 \uB370\uC774\uD130\uB97C \uAC00\uC838\uC624\uC138\uC694.`,
         ephemeral: true
       });
       return;
     }
-    const embed = new EmbedBuilder().setTitle(`\u{1F5FA}\uFE0F PUBG Map Rotation - ${region}`).setDescription(`**Mode:** ${mode.toUpperCase()} | **Week:** ${rotation.week} | **Patch:** ${rotation.patchVersion}`).setColor(15902976).setTimestamp();
+    const embed = new EmbedBuilder().setTitle(`\u{1F5FA}\uFE0F \uBC30\uADF8 \uB9F5 \uB85C\uD14C\uC774\uC158`).setDescription(`**\uBAA8\uB4DC:** ${modeLabel} | **${rotation.week}\uC8FC\uCC28** | **\uD328\uCE58 ${rotation.patchVersion}**`).setColor(15902976).setTimestamp();
     const fixedMaps = rotation.maps.filter((m) => m.role === "fixed");
     const favoredMaps = rotation.maps.filter((m) => m.role === "favored");
     const etcMaps = rotation.maps.filter((m) => m.role === "etc");
     if (fixedMaps.length > 0) {
       embed.addFields({
-        name: `${ROLE_EMOJI.fixed} Fixed Maps (Always Available)`,
-        value: fixedMaps.map((m) => m.name).join(", "),
+        name: `${ROLE_EMOJI.fixed} \uACE0\uC815\uB9F5`,
+        value: fixedMaps.map((m) => translateMapName(m.name)).join(", "),
         inline: false
       });
     }
     if (favoredMaps.length > 0) {
       embed.addFields({
-        name: `${ROLE_EMOJI.favored} Favored Maps (High Frequency)`,
-        value: favoredMaps.map((m) => m.name).join(", "),
+        name: `${ROLE_EMOJI.favored} \uC120\uD638\uB9F5`,
+        value: favoredMaps.map((m) => translateMapName(m.name)).join(", "),
         inline: false
       });
     }
     if (etcMaps.length > 0) {
       embed.addFields({
-        name: `${ROLE_EMOJI.etc} Etc Maps (Rotating)`,
-        value: etcMaps.map((m) => m.name).join(", "),
+        name: `${ROLE_EMOJI.etc} \uAE30\uD0C0\uB9F5`,
+        value: etcMaps.map((m) => translateMapName(m.name)).join(", "),
         inline: false
       });
     }
     embed.addFields({
-      name: "\u{1F4C5} Period",
+      name: "\u{1F4C5} \uAE30\uAC04",
       value: `${rotation.startDate} ~ ${rotation.endDate}`,
       inline: true
     });
@@ -277,10 +280,6 @@ async function fetchMapServiceReports() {
   try {
     const response = await axios.get(url, { timeout: 1e4 });
     const items = response.data.items || [];
-    logger.info("Google API raw results:", {
-      totalItems: items.length,
-      items: items.map((i) => ({ title: i.title, link: i.link }))
-    });
     const newsLinks = [];
     for (const item of items) {
       const linkMatch = item.link.match(/pubg\.com(?:\/(en|ko))?\/news\/(\d+)/);
@@ -295,19 +294,7 @@ async function fetchMapServiceReports() {
         title: item.title
       });
     }
-    logger.info("Parsed versions (before sort):", {
-      versions: newsLinks.map((n) => ({ version: n.version, title: n.title, url: n.url }))
-    });
     newsLinks.sort((a, b) => b.version - a.version);
-    logger.info("Parsed versions (after sort):", {
-      versions: newsLinks.map((n) => ({ version: n.version, title: n.title }))
-    });
-    const top = newsLinks[0];
-    if (top) {
-      logger.info("Google search completed", { topVersion: top.version, topUrl: top.url });
-    } else {
-      logger.warn("No pubg.com news links found in search results");
-    }
     return newsLinks.map((item) => item.url).slice(0, 5);
   } catch (error) {
     logger.error("Google search failed", error);
@@ -651,7 +638,7 @@ async function updateRotationsFromCrawl() {
 
 // src/bot/commands/update.ts
 var updateCommand = {
-  data: new SlashCommandBuilder2().setName("update").setDescription("Manually update map rotation data (Admin only)").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  data: new SlashCommandBuilder2().setName("update").setDescription("\uB9F5 \uB85C\uD14C\uC774\uC158 \uB370\uC774\uD130 \uC218\uB3D9 \uC5C5\uB370\uC774\uD2B8 (\uAD00\uB9AC\uC790 \uC804\uC6A9)").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });
     try {
@@ -659,19 +646,19 @@ var updateCommand = {
       if (success) {
         const log2 = await getLatestCrawlLog();
         await interaction.editReply({
-          content: `\u2705 Map rotation data updated successfully!
+          content: `\u2705 \uB9F5 \uB85C\uD14C\uC774\uC158 \uB370\uC774\uD130\uAC00 \uC5C5\uB370\uC774\uD2B8\uB418\uC5C8\uC2B5\uB2C8\uB2E4!
 
 ${log2?.message || ""}`
         });
       } else {
         await interaction.editReply({
-          content: "\u26A0\uFE0F Could not find or parse Map Service Report. Data may be outdated."
+          content: "\u26A0\uFE0F Map Service Report\uB97C \uCC3E\uAC70\uB098 \uD30C\uC2F1\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uB370\uC774\uD130\uAC00 \uCD5C\uC2E0\uC774 \uC544\uB2D0 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      const message = error instanceof Error ? error.message : "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958";
       await interaction.editReply({
-        content: `\u274C Failed to update rotation data: ${message}`
+        content: `\u274C \uC5C5\uB370\uC774\uD2B8 \uC2E4\uD328: ${message}`
       });
     }
   }
