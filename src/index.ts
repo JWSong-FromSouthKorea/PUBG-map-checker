@@ -54,3 +54,6 @@ main().catch((error) => {
   logger.error('Fatal error during startup', error);
   process.exit(1);
 });
+
+// Keep process alive
+process.stdin.resume();
