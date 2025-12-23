@@ -69,163 +69,98 @@ import {
 } from "discord.js";
 
 // src/db/index.ts
-import Database from "better-sqlite3";
+import { Low } from "lowdb";
+import { JSONFile } from "lowdb/node";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// src/db/schema.ts
-function initializeDatabase(db2) {
-  logger.info("Initializing database schema...");
-  db2.exec(`
-    CREATE TABLE IF NOT EXISTS rotations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      region TEXT NOT NULL,
-      mode TEXT NOT NULL,
-      week INTEGER NOT NULL,
-      patch_version TEXT NOT NULL,
-      maps TEXT NOT NULL,
-      start_date TEXT NOT NULL,
-      end_date TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(region, mode, week, patch_version)
-    );
-
-    CREATE TABLE IF NOT EXISTS crawl_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT NOT NULL,
-      status TEXT NOT NULL,
-      message TEXT,
-      crawled_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_rotations_region_mode
-      ON rotations(region, mode);
-
-    CREATE INDEX IF NOT EXISTS idx_rotations_dates
-      ON rotations(start_date, end_date);
-  `);
-  logger.info("Database schema initialized");
-}
-
-// src/db/index.ts
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
-var DB_PATH = path.join(__dirname, "../../data/rotation.db");
+var DB_PATH = path.join(__dirname, "../../data/rotations.json");
+var defaultData = {
+  rotations: [],
+  crawlLogs: []
+};
 var db = null;
-function getDatabase() {
+async function getDatabase() {
   if (!db) {
     logger.info("Opening database connection...", { path: DB_PATH });
-    db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
-    initializeDatabase(db);
+    const adapter = new JSONFile(DB_PATH);
+    db = new Low(adapter, defaultData);
+    await db.read();
+    if (!db.data) {
+      db.data = defaultData;
+      await db.write();
+    }
+    logger.info("Database initialized");
   }
   return db;
 }
-function closeDatabase() {
+async function closeDatabase() {
   if (db) {
-    db.close();
+    await db.write();
     db = null;
     logger.info("Database connection closed");
   }
 }
 
 // src/db/queries.ts
-function saveRotation(rotation) {
-  const db2 = getDatabase();
-  const stmt = db2.prepare(`
-    INSERT OR REPLACE INTO rotations
-    (region, mode, week, patch_version, maps, start_date, end_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
-    rotation.region,
-    rotation.mode,
-    rotation.week,
-    rotation.patchVersion,
-    JSON.stringify(rotation.maps),
-    rotation.startDate,
-    rotation.endDate
+async function saveRotation(rotation) {
+  const db2 = await getDatabase();
+  const existingIndex = db2.data.rotations.findIndex(
+    (r) => r.region === rotation.region && r.mode === rotation.mode && r.week === rotation.week && r.patchVersion === rotation.patchVersion
   );
+  if (existingIndex >= 0) {
+    db2.data.rotations[existingIndex] = {
+      ...rotation,
+      id: db2.data.rotations[existingIndex].id,
+      createdAt: db2.data.rotations[existingIndex].createdAt
+    };
+  } else {
+    const maxId = db2.data.rotations.reduce((max, r) => Math.max(max, r.id || 0), 0);
+    db2.data.rotations.push({
+      ...rotation,
+      id: maxId + 1,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  await db2.write();
 }
-function saveRotations(rotations) {
-  const db2 = getDatabase();
-  const insertMany = db2.transaction((items) => {
-    for (const rotation of items) {
-      saveRotation(rotation);
-    }
+async function saveRotations(rotations) {
+  for (const rotation of rotations) {
+    await saveRotation(rotation);
+  }
+}
+async function getCurrentRotation(region, mode) {
+  const db2 = await getDatabase();
+  const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const rotation = db2.data.rotations.find(
+    (r) => r.region === region && r.mode === mode && r.startDate <= now && r.endDate >= now
+  );
+  return rotation || null;
+}
+async function getUpcomingRotations(region, mode, limit = 4) {
+  const db2 = await getDatabase();
+  const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  return db2.data.rotations.filter(
+    (r) => r.region === region && r.mode === mode && r.endDate >= now
+  ).sort((a, b) => a.startDate.localeCompare(b.startDate)).slice(0, limit);
+}
+async function saveCrawlLog(log2) {
+  const db2 = await getDatabase();
+  const maxId = db2.data.crawlLogs.reduce((max, l) => Math.max(max, l.id || 0), 0);
+  db2.data.crawlLogs.push({
+    ...log2,
+    id: maxId + 1,
+    crawledAt: (/* @__PURE__ */ new Date()).toISOString()
   });
-  insertMany(rotations);
+  if (db2.data.crawlLogs.length > 100) {
+    db2.data.crawlLogs = db2.data.crawlLogs.slice(-100);
+  }
+  await db2.write();
 }
-function getCurrentRotation(region, mode) {
-  const db2 = getDatabase();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db2.prepare(`
-    SELECT * FROM rotations
-    WHERE region = ? AND mode = ?
-    AND start_date <= ? AND end_date >= ?
-    ORDER BY week DESC
-    LIMIT 1
-  `);
-  const row = stmt.get(region, mode, now, now);
-  if (!row) return null;
-  return {
-    id: row.id,
-    region: row.region,
-    mode: row.mode,
-    week: row.week,
-    patchVersion: row.patch_version,
-    maps: JSON.parse(row.maps),
-    startDate: row.start_date,
-    endDate: row.end_date,
-    createdAt: row.created_at
-  };
-}
-function getUpcomingRotations(region, mode, limit = 4) {
-  const db2 = getDatabase();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db2.prepare(`
-    SELECT * FROM rotations
-    WHERE region = ? AND mode = ?
-    AND end_date >= ?
-    ORDER BY start_date ASC
-    LIMIT ?
-  `);
-  const rows = stmt.all(region, mode, now, limit);
-  return rows.map((row) => ({
-    id: row.id,
-    region: row.region,
-    mode: row.mode,
-    week: row.week,
-    patchVersion: row.patch_version,
-    maps: JSON.parse(row.maps),
-    startDate: row.start_date,
-    endDate: row.end_date,
-    createdAt: row.created_at
-  }));
-}
-function saveCrawlLog(log2) {
-  const db2 = getDatabase();
-  const stmt = db2.prepare(`
-    INSERT INTO crawl_logs (url, status, message)
-    VALUES (?, ?, ?)
-  `);
-  stmt.run(log2.url, log2.status, log2.message || null);
-}
-function getLatestCrawlLog() {
-  const db2 = getDatabase();
-  const stmt = db2.prepare(`
-    SELECT * FROM crawl_logs
-    ORDER BY crawled_at DESC
-    LIMIT 1
-  `);
-  const row = stmt.get();
-  if (!row) return null;
-  return {
-    id: row.id,
-    url: row.url,
-    status: row.status,
-    message: row.message,
-    crawledAt: row.crawled_at
-  };
+async function getLatestCrawlLog() {
+  const db2 = await getDatabase();
+  if (db2.data.crawlLogs.length === 0) return null;
+  return db2.data.crawlLogs[db2.data.crawlLogs.length - 1];
 }
 
 // src/bot/commands/rotation.ts
@@ -257,7 +192,7 @@ var rotationCommand = {
   async execute(interaction) {
     const region = interaction.options.getString("region") || "AS";
     const mode = interaction.options.getString("mode") || "normal";
-    const rotation = getCurrentRotation(region, mode);
+    const rotation = await getCurrentRotation(region, mode);
     if (!rotation) {
       await interaction.reply({
         content: `No rotation data found for ${region} (${mode}). Try running \`/update\` to fetch latest data.`,
@@ -330,7 +265,7 @@ var scheduleCommand = {
     const region = interaction.options.getString("region") || "AS";
     const mode = interaction.options.getString("mode") || "normal";
     const weeks = interaction.options.getInteger("weeks") || 4;
-    const rotations = getUpcomingRotations(region, mode, weeks);
+    const rotations = await getUpcomingRotations(region, mode, weeks);
     if (rotations.length === 0) {
       await interaction.reply({
         content: `No schedule data found for ${region} (${mode}). Try running \`/update\` to fetch latest data.`,
@@ -494,7 +429,7 @@ async function crawlMapServiceReport(url) {
       return null;
     }
     const rotations = parseRotationTable(html, patchVersion);
-    saveCrawlLog({
+    await saveCrawlLog({
       url,
       status: "success",
       message: `Parsed ${rotations.length} rotations for patch ${patchVersion}`
@@ -507,7 +442,7 @@ async function crawlMapServiceReport(url) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     logger.error("Failed to crawl Map Service Report", { url, error: message });
-    saveCrawlLog({
+    await saveCrawlLog({
       url,
       status: "failed",
       message
@@ -533,13 +468,13 @@ async function findAndCrawlLatestReport() {
   }
 }
 async function updateRotationsFromCrawl() {
-  getDatabase();
+  await getDatabase();
   const data = await findAndCrawlLatestReport();
   if (!data || data.rotations.length === 0) {
     logger.warn("No rotation data to save");
     return false;
   }
-  saveRotations(data.rotations);
+  await saveRotations(data.rotations);
   logger.info("Rotations saved successfully", {
     patch: data.patchVersion,
     count: data.rotations.length
@@ -563,7 +498,7 @@ var updateCommand = {
     try {
       const success = await updateRotationsFromCrawl();
       if (success) {
-        const log2 = getLatestCrawlLog();
+        const log2 = await getLatestCrawlLog();
         await interaction.editReply({
           content: `\u2705 Map rotation data updated successfully!
 
@@ -696,7 +631,7 @@ async function main() {
   logger.info("=".repeat(50));
   logger.info("PUBG Map Rotation Discord Bot");
   logger.info("=".repeat(50));
-  getDatabase();
+  await getDatabase();
   loadCommands();
   await registerCommands();
   registerReadyEvent();
@@ -706,11 +641,11 @@ async function main() {
   await initialCrawl();
   logger.info("Bot is fully operational");
 }
-function shutdown() {
+async function shutdown() {
   logger.info("Shutting down...");
   stopScheduler();
   stopBot();
-  closeDatabase();
+  await closeDatabase();
   logger.info("Shutdown complete");
   process.exit(0);
 }
