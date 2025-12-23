@@ -86,9 +86,7 @@ import {
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import path from "path";
-import { fileURLToPath } from "url";
-var __dirname = path.dirname(fileURLToPath(import.meta.url));
-var DB_PATH = path.join(__dirname, "../../data/rotations.json");
+var DB_PATH = path.join(process.cwd(), "data", "rotations.json");
 var defaultData = {
   rotations: [],
   crawlLogs: []

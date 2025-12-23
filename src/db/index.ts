@@ -1,7 +1,6 @@
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
 import type { WeeklyRotation, CrawlLog } from '../types/index.js';
 
@@ -10,8 +9,7 @@ export interface DbSchema {
   crawlLogs: CrawlLog[];
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, '../../data/rotations.json');
+const DB_PATH = path.join(process.cwd(), 'data', 'rotations.json');
 
 const defaultData: DbSchema = {
   rotations: [],
