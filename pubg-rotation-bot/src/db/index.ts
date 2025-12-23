@@ -1,27 +1,43 @@
-import Database from 'better-sqlite3';
+import { Low } from 'lowdb';
+import { JSONFile } from 'lowdb/node';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeDatabase } from './schema.js';
 import { logger } from '../utils/logger.js';
+import type { WeeklyRotation, CrawlLog } from '../types/index.js';
+
+export interface DbSchema {
+  rotations: WeeklyRotation[];
+  crawlLogs: CrawlLog[];
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, '../../data/rotation.db');
+const DB_PATH = path.join(__dirname, '../../data/rotations.json');
 
-let db: Database.Database | null = null;
+const defaultData: DbSchema = {
+  rotations: [],
+  crawlLogs: [],
+};
 
-export function getDatabase(): Database.Database {
+let db: Low<DbSchema> | null = null;
+
+export async function getDatabase(): Promise<Low<DbSchema>> {
   if (!db) {
     logger.info('Opening database connection...', { path: DB_PATH });
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    initializeDatabase(db);
+    const adapter = new JSONFile<DbSchema>(DB_PATH);
+    db = new Low(adapter, defaultData);
+    await db.read();
+    if (!db.data) {
+      db.data = defaultData;
+      await db.write();
+    }
+    logger.info('Database initialized');
   }
   return db;
 }
 
-export function closeDatabase(): void {
+export async function closeDatabase(): Promise<void> {
   if (db) {
-    db.close();
+    await db.write();
     db = null;
     logger.info('Database connection closed');
   }

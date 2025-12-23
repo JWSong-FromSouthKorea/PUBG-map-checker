@@ -20,7 +20,7 @@ export const updateCommand: Command = {
       const success = await updateRotationsFromCrawl();
 
       if (success) {
-        const log = getLatestCrawlLog();
+        const log = await getLatestCrawlLog();
         await interaction.editReply({
           content: `✅ Map rotation data updated successfully!\n\n${log?.message || ''}`,
         });

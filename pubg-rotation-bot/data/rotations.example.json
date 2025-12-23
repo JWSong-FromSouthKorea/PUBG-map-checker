@@ -1,0 +1,22 @@
+{
+  "rotations": [
+    {
+      "id": 1,
+      "region": "AS",
+      "mode": "normal",
+      "week": 1,
+      "patchVersion": "38.2",
+      "maps": [
+        { "name": "Erangel", "role": "fixed" },
+        { "name": "Miramar", "role": "fixed" },
+        { "name": "Taego", "role": "favored" },
+        { "name": "Vikendi", "role": "favored" },
+        { "name": "Rondo", "role": "etc" }
+      ],
+      "startDate": "2024-12-18",
+      "endDate": "2024-12-24",
+      "createdAt": "2024-12-18T00:00:00.000Z"
+    }
+  ],
+  "crawlLogs": []
+}
