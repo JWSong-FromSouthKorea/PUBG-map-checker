@@ -51,12 +51,19 @@ var client = new Client({
 var commands = new Collection();
 function startBot() {
   logger.info("Starting Discord bot...");
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     client.once("ready", () => {
       logger.info("Bot logged in successfully");
       resolve();
     });
-    client.login(botConfig.discordToken);
+    client.once("error", (err) => {
+      logger.error("Discord client error", err);
+      reject(err);
+    });
+    client.login(botConfig.discordToken).catch((err) => {
+      logger.error("Login failed", err);
+      reject(err);
+    });
   });
 }
 function stopBot() {
