@@ -493,14 +493,6 @@ async function updateRotationsFromCrawl() {
   });
   return true;
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
-  updateRotationsFromCrawl().then((success) => {
-    process.exit(success ? 0 : 1);
-  }).catch((error) => {
-    logger.error("Crawler failed", error);
-    process.exit(1);
-  });
-}
 
 // src/bot/commands/update.ts
 var updateCommand = {
