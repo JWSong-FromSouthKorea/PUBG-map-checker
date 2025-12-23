@@ -14,22 +14,23 @@ async function main(): Promise<void> {
   // Initialize database
   await getDatabase();
 
-  // Load and register commands
+  // Load commands
   loadCommands();
-  await registerCommands();
 
   // Register event handlers
-  registerReadyEvent();
   registerInteractionEvent();
 
-  // Start the bot
+  // Start the bot first
   await startBot();
+
+  // Register commands after bot is ready
+  await registerCommands();
 
   // Start scheduler for automatic updates
   startScheduler();
 
-  // Run initial crawl if needed
-  await initialCrawl();
+  // Run initial crawl if needed (don't await, run in background)
+  initialCrawl().catch(err => logger.warn('Initial crawl failed', err));
 
   logger.info('Bot is fully operational');
 }

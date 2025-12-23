@@ -554,19 +554,10 @@ async function registerCommands() {
   }
 }
 
-// src/bot/events/ready.ts
-import { Events } from "discord.js";
-function registerReadyEvent() {
-  client.once(Events.ClientReady, (readyClient) => {
-    logger.info(`Bot is ready! Logged in as ${readyClient.user.tag}`);
-    logger.info(`Serving ${readyClient.guilds.cache.size} guilds`);
-  });
-}
-
 // src/bot/events/interactionCreate.ts
-import { Events as Events2 } from "discord.js";
+import { Events } from "discord.js";
 function registerInteractionEvent() {
-  client.on(Events2.InteractionCreate, async (interaction) => {
+  client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     const command = commands.get(interaction.commandName);
     if (!command) {
@@ -638,12 +629,11 @@ async function main() {
   logger.info("=".repeat(50));
   await getDatabase();
   loadCommands();
-  await registerCommands();
-  registerReadyEvent();
   registerInteractionEvent();
   await startBot();
+  await registerCommands();
   startScheduler();
-  await initialCrawl();
+  initialCrawl().catch((err) => logger.warn("Initial crawl failed", err));
   logger.info("Bot is fully operational");
 }
 async function shutdown() {
