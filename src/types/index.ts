@@ -74,4 +74,6 @@ export interface BotConfig {
   guildId?: string;
   crawlSchedule: string; // cron expression
   pubgNewsUrl: string;
+  googleApiKey?: string;
+  googleSearchEngineId?: string;
 }

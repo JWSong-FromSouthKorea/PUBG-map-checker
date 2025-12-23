@@ -17,7 +17,9 @@ var botConfig = {
   guildId: getEnv("DISCORD_GUILD_ID", false),
   crawlSchedule: "0 3 * * 3",
   // Every Wednesday at 03:00 UTC
-  pubgNewsUrl: "https://pubg.com/en/news"
+  pubgNewsUrl: "https://pubg.com/en/news",
+  googleApiKey: getEnv("GOOGLE_API_KEY", false),
+  googleSearchEngineId: getEnv("GOOGLE_SEARCH_ENGINE_ID", false)
 };
 
 // src/utils/logger.ts
@@ -326,9 +328,45 @@ async function fetchPage(url) {
   logger.info("Page fetched successfully", { status: response.status });
   return response.data;
 }
+async function searchWithGoogle() {
+  const { googleApiKey, googleSearchEngineId } = botConfig;
+  if (!googleApiKey || !googleSearchEngineId) {
+    logger.warn("Google API credentials not configured, skipping search");
+    return [];
+  }
+  const query = '"Map Service Report" site:pubg.com/en/news';
+  const url = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(query)}`;
+  logger.info("Searching for Map Service Reports via Google...", { query });
+  try {
+    const response = await axios.get(url, { timeout: 1e4 });
+    const items = response.data.items || [];
+    const newsLinks = [];
+    for (const item of items) {
+      const match = item.link.match(/pubg\.com\/en\/news\/(\d+)/);
+      if (match) {
+        newsLinks.push({
+          url: item.link,
+          id: parseInt(match[1], 10)
+        });
+      }
+    }
+    newsLinks.sort((a, b) => b.id - a.id);
+    const sortedUrls = newsLinks.map((item) => item.url);
+    logger.info("Google search completed", { count: sortedUrls.length });
+    return sortedUrls.slice(0, 5);
+  } catch (error) {
+    logger.error("Google search failed", error);
+    return [];
+  }
+}
 async function fetchMapServiceReports() {
-  const newsUrl = "https://pubg.com/en/news";
   logger.info("Fetching news page to find Map Service Reports...");
+  const googleResults = await searchWithGoogle();
+  if (googleResults.length > 0) {
+    return googleResults;
+  }
+  logger.info("Falling back to direct page scraping...");
+  const newsUrl = "https://pubg.com/en/news";
   const html = await fetchPage(newsUrl);
   const linkPattern = /href="(\/en\/news\/\d+)"/g;
   const links = [];

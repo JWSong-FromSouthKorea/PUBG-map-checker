@@ -17,4 +17,6 @@ export const botConfig: BotConfig = {
   guildId: getEnv('DISCORD_GUILD_ID', false),
   crawlSchedule: '0 3 * * 3', // Every Wednesday at 03:00 UTC
   pubgNewsUrl: 'https://pubg.com/en/news',
+  googleApiKey: getEnv('GOOGLE_API_KEY', false),
+  googleSearchEngineId: getEnv('GOOGLE_SEARCH_ENGINE_ID', false),
 };
