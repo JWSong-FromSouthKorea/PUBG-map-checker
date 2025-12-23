@@ -12,7 +12,7 @@ async function main(): Promise<void> {
   logger.info('='.repeat(50));
 
   // Initialize database
-  getDatabase();
+  await getDatabase();
 
   // Load and register commands
   loadCommands();
@@ -35,12 +35,12 @@ async function main(): Promise<void> {
 }
 
 // Graceful shutdown
-function shutdown(): void {
+async function shutdown(): Promise<void> {
   logger.info('Shutting down...');
 
   stopScheduler();
   stopBot();
-  closeDatabase();
+  await closeDatabase();
 
   logger.info('Shutdown complete');
   process.exit(0);
